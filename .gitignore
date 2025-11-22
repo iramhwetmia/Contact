@@ -43,3 +43,17 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
+
+# Local files
+local.properties
+generated_plugin_registrant.dart
+
+# Sembast DB (dev)
+contacts.db
+
+# Lockfile
+pubspec.lock
+
+# OS
+.DS_Store
+Thumbs.db
