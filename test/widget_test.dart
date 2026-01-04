@@ -9,11 +9,18 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:flutter_application_1/main.dart';
+import 'package:go_router/go_router.dart';
 
 void main() {
   testWidgets('Counter increments smoke test', (WidgetTester tester) async {
     // Build our app and trigger a frame.
-    await tester.pumpWidget(const MyApp());
+    // Créez un GoRouter minimal pour le test
+    final GoRouter testRouter = GoRouter(
+      routes: [
+        GoRoute(path: '/', builder: (context, state) => const Placeholder()),
+      ],
+    );
+    await tester.pumpWidget(MyApp(router: testRouter));
 
     // Verify that our counter starts at 0.
     expect(find.text('0'), findsOneWidget);

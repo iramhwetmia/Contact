@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
-import 'DatabaseHelper.dart';
+import 'ApiService.dart';
+import 'AuthService.dart';
 import 'Login.dart';
 
 class ContactsPage extends StatefulWidget {
@@ -12,6 +13,7 @@ class ContactsPage extends StatefulWidget {
 class _ContactsPageState extends State<ContactsPage> {
   List<Map<String, dynamic>> contacts = [];
   List<Map<String, dynamic>> filteredContacts = [];
+  bool isLoading = false;
 
   final searchController = TextEditingController();
   final nameController = TextEditingController();
@@ -26,18 +28,32 @@ class _ContactsPageState extends State<ContactsPage> {
     searchController.addListener(_filterContacts);
   }
 
+  @override
+  void dispose() {
+    searchController.dispose();
+    nameController.dispose();
+    phoneController.dispose();
+    super.dispose();
+  }
+
   Future<void> _loadUserEmail() async {
-    final email = await DatabaseHelper.instance.getLoggedInEmail();
+    final email = AuthService.instance.currentUserEmail;
     setState(() {
       userEmail = email;
     });
   }
 
   Future<void> loadContacts() async {
-    final data = await DatabaseHelper.instance.getContacts();
+    setState(() {
+      isLoading = true;
+    });
+
+    final data = await ApiService.instance.getContacts();
+
     setState(() {
       contacts = data;
       filteredContacts = data;
+      isLoading = false;
     });
   }
 
@@ -74,6 +90,7 @@ class _ContactsPageState extends State<ContactsPage> {
               controller: nameController,
               decoration: const InputDecoration(labelText: "Nom"),
             ),
+            const SizedBox(height: 12),
             TextField(
               controller: phoneController,
               decoration: const InputDecoration(labelText: "Téléphone"),
@@ -89,20 +106,29 @@ class _ContactsPageState extends State<ContactsPage> {
             onPressed: () async {
               final name = nameController.text.trim();
               final phone = phoneController.text.trim();
-              if (name.isEmpty || phone.isEmpty) return;
+              if (name.isEmpty || phone.isEmpty) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text("Veuillez remplir tous les champs"),
+                  ),
+                );
+                return;
+              }
 
               if (contact == null) {
-                await DatabaseHelper.instance.insertContact({
-                  "name": name,
-                  "phone": phone,
-                });
+                // Créer
+                await ApiService.instance.createContact(name, phone);
               } else {
-                await DatabaseHelper.instance.updateContact(contact['id'], {
-                  "name": name,
-                  "phone": phone,
-                });
+                // Mettre à jour
+                await ApiService.instance.updateContact(
+                  contact['id'],
+                  name,
+                  phone,
+                );
               }
+
               loadContacts();
+              if (!mounted) return;
               Navigator.pop(context);
             },
             child: Text(contact == null ? "Ajouter" : "Modifier"),
@@ -113,22 +139,40 @@ class _ContactsPageState extends State<ContactsPage> {
   }
 
   Future<void> _deleteContact(int id) async {
-    await DatabaseHelper.instance.deleteContact(id);
-    loadContacts();
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text("Confirmer"),
+        content: const Text("Voulez-vous vraiment supprimer ce contact ?"),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text("Annuler"),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+            child: const Text("Supprimer"),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true) {
+      await ApiService.instance.deleteContact(id);
+      loadContacts();
+    }
   }
 
-  // --- BOUTON DECONNEXION ---
   Future<void> _logout() async {
-    // Supprime l'utilisateur connecté
-    await DatabaseHelper.instance.setLoggedInEmail(null);
+    await AuthService.instance.logout();
 
-    // Redirige vers LoginPage et supprime toute l'historique
-    if (mounted) {
-      Navigator.of(context).pushAndRemoveUntil(
-        MaterialPageRoute(builder: (_) => const LoginPage()),
-        (route) => false,
-      );
-    }
+    if (!mounted) return;
+
+    Navigator.pushReplacement(
+      context,
+      MaterialPageRoute(builder: (_) => const LoginPage()),
+    );
   }
 
   @override
@@ -137,17 +181,19 @@ class _ContactsPageState extends State<ContactsPage> {
       appBar: AppBar(
         title: Text("Mes Contacts - ${userEmail ?? ''}"),
         backgroundColor: Colors.purple,
+        foregroundColor: Colors.white,
         actions: [
           IconButton(
             icon: const Icon(Icons.logout),
             tooltip: "Déconnexion",
-            onPressed: _logout, // ATTENTION: pas de parenthèses
+            onPressed: _logout,
           ),
         ],
       ),
       floatingActionButton: FloatingActionButton(
         onPressed: () => _showContactDialog(),
         backgroundColor: Colors.purple,
+        foregroundColor: Colors.white,
         child: const Icon(Icons.add),
       ),
       body: Column(
@@ -171,38 +217,57 @@ class _ContactsPageState extends State<ContactsPage> {
           ),
           // LISTE DES CONTACTS
           Expanded(
-            child: ListView.builder(
-              itemCount: filteredContacts.length,
-              itemBuilder: (context, index) {
-                final c = filteredContacts[index];
-                return Card(
-                  margin: const EdgeInsets.symmetric(
-                    horizontal: 12,
-                    vertical: 6,
-                  ),
-                  child: ListTile(
-                    leading: CircleAvatar(
-                      child: Text(c['name'][0].toUpperCase()),
+            child: isLoading
+                ? const Center(child: CircularProgressIndicator())
+                : filteredContacts.isEmpty
+                ? const Center(
+                    child: Text(
+                      "Aucun contact",
+                      style: TextStyle(fontSize: 16, color: Colors.grey),
                     ),
-                    title: Text(c['name']),
-                    subtitle: Text(c['phone']),
-                    trailing: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        IconButton(
-                          icon: const Icon(Icons.edit, color: Colors.blue),
-                          onPressed: () => _showContactDialog(contact: c),
+                  )
+                : ListView.builder(
+                    itemCount: filteredContacts.length,
+                    itemBuilder: (context, index) {
+                      final c = filteredContacts[index];
+                      return Card(
+                        margin: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 6,
                         ),
-                        IconButton(
-                          icon: const Icon(Icons.delete, color: Colors.red),
-                          onPressed: () => _deleteContact(c['id']),
+                        child: ListTile(
+                          leading: CircleAvatar(
+                            backgroundColor: Colors.purple,
+                            child: Text(
+                              c['name'][0].toUpperCase(),
+                              style: const TextStyle(color: Colors.white),
+                            ),
+                          ),
+                          title: Text(c['name']),
+                          subtitle: Text(c['phone']),
+                          trailing: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              IconButton(
+                                icon: const Icon(
+                                  Icons.edit,
+                                  color: Colors.blue,
+                                ),
+                                onPressed: () => _showContactDialog(contact: c),
+                              ),
+                              IconButton(
+                                icon: const Icon(
+                                  Icons.delete,
+                                  color: Colors.red,
+                                ),
+                                onPressed: () => _deleteContact(c['id']),
+                              ),
+                            ],
+                          ),
                         ),
-                      ],
-                    ),
+                      );
+                    },
                   ),
-                );
-              },
-            ),
           ),
         ],
       ),

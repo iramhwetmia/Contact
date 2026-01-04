@@ -14,6 +14,7 @@ class _LoginPageState extends State<LoginPage> {
   final emailController = TextEditingController();
   final passwordController = TextEditingController();
   bool _obscurePassword = true;
+  bool _isLoading = false;
 
   @override
   void dispose() {
@@ -25,22 +26,32 @@ class _LoginPageState extends State<LoginPage> {
   Future<void> _login() async {
     if (!_formKey.currentState!.validate()) return;
 
+    setState(() {
+      _isLoading = true;
+    });
+
     final email = emailController.text.trim();
     final password = passwordController.text;
 
-    final ok = await AuthService.instance.login(email, password);
+    final result = await AuthService.instance.login(email, password);
+
+    setState(() {
+      _isLoading = false;
+    });
 
     if (!mounted) return;
 
-    if (ok) {
-      // debug
-      debugPrint('LoginPage: login successful, navigating to /contacts');
-      context.go('/contacts'); // ✅ Navigation vers ContactsPage
+    if (result is Map<String, dynamic> && result['success'] == true) {
+      debugPrint('LoginPage: connexion réussie, navigation vers /contacts');
+      context.go('/contacts');
     } else {
-      debugPrint('LoginPage: login failed for $email');
+      debugPrint('LoginPage: échec de connexion pour $email');
+      final errorMsg = result is Map<String, dynamic>
+          ? (result['error'] ?? "Identifiants incorrects")
+          : "Identifiants incorrects";
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(const SnackBar(content: Text("Identifiants incorrects")));
+      ).showSnackBar(SnackBar(content: Text(errorMsg)));
     }
   }
 
@@ -84,6 +95,7 @@ class _LoginPageState extends State<LoginPage> {
                       const SizedBox(height: 16),
                       TextFormField(
                         controller: emailController,
+                        enabled: !_isLoading,
                         decoration: InputDecoration(
                           labelText: "Email",
                           prefixIcon: const Icon(Icons.email_outlined),
@@ -108,6 +120,7 @@ class _LoginPageState extends State<LoginPage> {
                       TextFormField(
                         controller: passwordController,
                         obscureText: _obscurePassword,
+                        enabled: !_isLoading,
                         decoration: InputDecoration(
                           labelText: "Mot de passe",
                           prefixIcon: const Icon(Icons.lock_outline),
@@ -142,31 +155,36 @@ class _LoginPageState extends State<LoginPage> {
                         },
                       ),
                       const SizedBox(height: 24),
-                      ElevatedButton(
-                        onPressed: _login,
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.purple,
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 80,
-                            vertical: 14,
-                          ),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(25),
-                          ),
-                        ),
-                        child: const Text(
-                          "Se connecter",
-                          style: TextStyle(color: Colors.white, fontSize: 16),
-                        ),
-                      ),
+                      _isLoading
+                          ? const CircularProgressIndicator()
+                          : ElevatedButton(
+                              onPressed: _login,
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: Colors.purple,
+                                foregroundColor: Colors.white,
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 80,
+                                  vertical: 14,
+                                ),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(25),
+                                ),
+                              ),
+                              child: const Text(
+                                "Se connecter",
+                                style: TextStyle(fontSize: 16),
+                              ),
+                            ),
                       const SizedBox(height: 12),
                       TextButton(
-                        onPressed: () {
-                          debugPrint('LoginPage: create account pressed');
-                          context.go(
-                            '/register',
-                          ); // ✅ Navigation vers RegisterPage
-                        },
+                        onPressed: _isLoading
+                            ? null
+                            : () {
+                                debugPrint(
+                                  'LoginPage: navigation vers /register',
+                                );
+                                context.go('/register');
+                              },
                         child: const Text(
                           "Créer un compte",
                           style: TextStyle(color: Colors.purple),

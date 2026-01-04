@@ -1,3 +1,4 @@
+import 'ApiService.dart';
 import 'DatabaseHelper.dart';
 import 'dart:developer' as developer;
 
@@ -6,60 +7,102 @@ class AuthService {
   static final AuthService instance = AuthService._private();
 
   String? _loggedInEmail;
+  String? _token;
 
   Future<void> init() async {
-    // Load loggedInEmail from sembast via DatabaseHelper
+    // Charger l'email et le token depuis le stockage local
     _loggedInEmail = await DatabaseHelper.instance.getLoggedInEmail();
+    _token = await DatabaseHelper.instance.getToken();
+
+    if (_token != null) {
+      ApiService.instance.setToken(_token);
+    }
+
+    developer.log(
+      'AuthService.init: email=$_loggedInEmail, hasToken=${_token != null}',
+    );
   }
 
-  bool get isLoggedIn => _loggedInEmail != null;
+  bool get isLoggedIn => _loggedInEmail != null && _token != null;
 
   String? get currentUserEmail => _loggedInEmail;
+  String? get token => _token;
 
-  Future<bool> register(String email, String password) async {
+  // ==================== INSCRIPTION ====================
+  Future<Map<String, dynamic>> register(String email, String password) async {
     try {
-      developer.log('AuthService.register: trying to register $email');
-      final exists = await DatabaseHelper.instance.userExists(email);
-      if (exists) {
-        developer.log('AuthService.register: user exists $email');
-        return false;
-      }
-      await DatabaseHelper.instance.saveUser(email, password);
-      _loggedInEmail = email;
-      await DatabaseHelper.instance.setLoggedInEmail(email);
-      developer.log('AuthService.register: registration successful $email');
-      return true;
-    } catch (e, st) {
-      developer.log('AuthService.register error: $e', error: e, stackTrace: st);
-      return false;
-    }
-  }
+      developer.log('AuthService.register: $email');
 
-  Future<bool> login(String email, String password) async {
-    try {
-      developer.log('AuthService.login: trying to login $email');
-      final ok = await DatabaseHelper.instance.checkUser(email, password);
-      if (ok) {
+      final result = await ApiService.instance.register(email, password);
+
+      if (result['success'] == true) {
         _loggedInEmail = email;
+        _token = result['token'];
+
+        // Sauvegarder localement
         await DatabaseHelper.instance.setLoggedInEmail(email);
-        developer.log('AuthService.login: success $email');
-        return true;
+        await DatabaseHelper.instance.setToken(_token);
+
+        ApiService.instance.setToken(_token);
+
+        developer.log('AuthService.register: succès $email');
+        return {'success': true};
+      } else {
+        developer.log('AuthService.register: échec - ${result['error']}');
+        return {'success': false, 'error': result['error']};
       }
-      developer.log('AuthService.login: failed credentials $email');
-      return false;
     } catch (e, st) {
-      developer.log('AuthService.login error: $e', error: e, stackTrace: st);
-      return false;
+      developer.log(
+        'AuthService.register erreur: $e',
+        error: e,
+        stackTrace: st,
+      );
+      return {'success': false, 'error': 'Erreur lors de l\'inscription'};
     }
   }
 
+  // ==================== CONNEXION ====================
+  Future<Map<String, dynamic>> login(String email, String password) async {
+    try {
+      developer.log('AuthService.login: $email');
+
+      final result = await ApiService.instance.login(email, password);
+
+      if (result['success'] == true) {
+        _loggedInEmail = email;
+        _token = result['token'];
+
+        // Sauvegarder localement
+        await DatabaseHelper.instance.setLoggedInEmail(email);
+        await DatabaseHelper.instance.setToken(_token);
+
+        ApiService.instance.setToken(_token);
+
+        developer.log('AuthService.login: succès $email');
+        return {'success': true};
+      } else {
+        developer.log('AuthService.login: échec - ${result['error']}');
+        return {'success': false, 'error': result['error']};
+      }
+    } catch (e, st) {
+      developer.log('AuthService.login erreur: $e', error: e, stackTrace: st);
+      return {'success': false, 'error': 'Erreur lors de la connexion'};
+    }
+  }
+
+  // ==================== DÉCONNEXION ====================
   Future<void> logout() async {
     try {
       developer.log('AuthService.logout');
       _loggedInEmail = null;
+      _token = null;
+
       await DatabaseHelper.instance.setLoggedInEmail(null);
+      await DatabaseHelper.instance.setToken(null);
+
+      ApiService.instance.logout();
     } catch (e, st) {
-      developer.log('AuthService.logout error: $e', error: e, stackTrace: st);
+      developer.log('AuthService.logout erreur: $e', error: e, stackTrace: st);
     }
   }
 }

@@ -13,6 +13,7 @@ class _RegisterPageState extends State<RegisterPage> {
   final nameController = TextEditingController();
   final emailController = TextEditingController();
   final passwordController = TextEditingController();
+  bool _isLoading = false;
 
   @override
   void dispose() {
@@ -33,22 +34,53 @@ class _RegisterPageState extends State<RegisterPage> {
       return;
     }
 
+    if (!RegExp(r'^[^@]+@[^@]+\.[^@]+').hasMatch(email)) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text("Email invalide")));
+      return;
+    }
+
+    if (password.length < 4) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text("Le mot de passe doit contenir au moins 4 caractères"),
+        ),
+      );
+      return;
+    }
+
+    setState(() {
+      _isLoading = true;
+    });
+
     try {
-      final ok = await AuthService.instance.register(email, password);
+      final result = await AuthService.instance.register(email, password);
+
+      setState(() {
+        _isLoading = false;
+      });
 
       if (!mounted) return;
 
-      if (ok) {
+      if (result is Map<String, dynamic> && result['success'] == true) {
         ScaffoldMessenger.of(
           context,
         ).showSnackBar(const SnackBar(content: Text("Inscription réussie !")));
         context.go('/contacts');
       } else {
+        final errorMsg = result is Map<String, dynamic>
+            ? (result['error'] ?? "Erreur lors de l'inscription")
+            : "Erreur lors de l'inscription";
         ScaffoldMessenger.of(
           context,
-        ).showSnackBar(const SnackBar(content: Text("Cet email existe déjà")));
+        ).showSnackBar(SnackBar(content: Text(errorMsg)));
       }
     } catch (e) {
+      setState(() {
+        _isLoading = false;
+      });
+
       if (!mounted) return;
       ScaffoldMessenger.of(
         context,
@@ -95,7 +127,6 @@ class _RegisterPageState extends State<RegisterPage> {
                       color: Colors.purple.shade700,
                     ),
                   ),
-
                   const SizedBox(height: 40),
 
                   // NOM
@@ -106,6 +137,7 @@ class _RegisterPageState extends State<RegisterPage> {
                     ),
                     child: TextField(
                       controller: nameController,
+                      enabled: !_isLoading,
                       decoration: const InputDecoration(
                         prefixIcon: Icon(Icons.person, color: Colors.purple),
                         labelText: "Nom",
@@ -117,7 +149,6 @@ class _RegisterPageState extends State<RegisterPage> {
                       ),
                     ),
                   ),
-
                   const SizedBox(height: 20),
 
                   // EMAIL
@@ -128,6 +159,7 @@ class _RegisterPageState extends State<RegisterPage> {
                     ),
                     child: TextField(
                       controller: emailController,
+                      enabled: !_isLoading,
                       decoration: const InputDecoration(
                         prefixIcon: Icon(Icons.email, color: Colors.purple),
                         labelText: "Email",
@@ -139,7 +171,6 @@ class _RegisterPageState extends State<RegisterPage> {
                       ),
                     ),
                   ),
-
                   const SizedBox(height: 20),
 
                   // PASSWORD
@@ -151,6 +182,7 @@ class _RegisterPageState extends State<RegisterPage> {
                     child: TextField(
                       controller: passwordController,
                       obscureText: true,
+                      enabled: !_isLoading,
                       decoration: const InputDecoration(
                         prefixIcon: Icon(Icons.lock, color: Colors.purple),
                         labelText: "Mot de passe",
@@ -162,34 +194,35 @@ class _RegisterPageState extends State<RegisterPage> {
                       ),
                     ),
                   ),
-
                   const SizedBox(height: 35),
 
-                  SizedBox(
-                    width: double.infinity,
-                    child: ElevatedButton(
-                      onPressed: _register,
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.purple,
-                        padding: const EdgeInsets.symmetric(vertical: 16),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(20),
+                  _isLoading
+                      ? const CircularProgressIndicator()
+                      : SizedBox(
+                          width: double.infinity,
+                          child: ElevatedButton(
+                            onPressed: _register,
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: Colors.purple,
+                              foregroundColor: Colors.white,
+                              padding: const EdgeInsets.symmetric(vertical: 16),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(20),
+                              ),
+                            ),
+                            child: const Text(
+                              "S'inscrire",
+                              style: TextStyle(
+                                fontSize: 18,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ),
                         ),
-                      ),
-                      child: const Text(
-                        "S'inscrire",
-                        style: TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    ),
-                  ),
-
                   const SizedBox(height: 20),
 
                   TextButton(
-                    onPressed: () => context.go('/'),
+                    onPressed: _isLoading ? null : () => context.go('/'),
                     child: Text(
                       "Déjà un compte ? Se connecter",
                       style: TextStyle(
